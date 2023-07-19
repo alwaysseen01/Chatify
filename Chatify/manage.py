@@ -3,6 +3,9 @@
 import os
 import sys
 
+import sys
+print(sys.executable)
+
 
 def main():
     """Run administrative tasks."""
