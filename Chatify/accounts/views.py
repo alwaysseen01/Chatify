@@ -1,18 +1,21 @@
+import logging
 from datetime import timedelta, datetime
-import jwt
+from http.client import HTTPException
 
 from asgiref.sync import sync_to_async
 from ninja.router import Router
 from django.contrib.auth import authenticate
 from django.contrib.auth.hashers import make_password
+from ninja.security import HttpBearer
+import jwt
+from jwt import decode, PyJWTError
+
 from .models import CustomUser
 from core.db_config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
-
 from .schemas import UserRegisterIn, UserLoginIn
 
-SECRET_KEY = SECRET_KEY
-ALGORITHM = ALGORITHM
-ACCESS_TOKEN_EXPIRE_MINUTES = ACCESS_TOKEN_EXPIRE_MINUTES
+# LOGGING PROCESS
+logger = logging.getLogger(__name__)
 
 auth_router = Router()
 
@@ -61,14 +64,24 @@ async def login(request, data: UserLoginIn):
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={'sub': user.username}, expires_delta=access_token_expires
+        user=user, expires_delta=access_token_expires
     )
 
-    return {'access_token': access_token, 'token_type': 'bearer'}
+    return {'access_token': access_token, 'token_type': 'bearer', 'token_expires': ACCESS_TOKEN_EXPIRE_MINUTES}
 
 
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
+# ------------------ AUTH ----------------------------------
+class AuthBearer(HttpBearer):
+    def authenticate(self, request, token):
+        try:
+            payload = decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            return payload
+        except PyJWTError:
+            raise HTTPException(status_code=401, detail='Invalid token')
+
+
+def create_access_token(user: CustomUser, expires_delta: timedelta = None):
+    to_encode = {'sub': user.username}
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
@@ -76,3 +89,4 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode.update({'exp': expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+# ---------------------------------------------------------
